@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <string.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,8 +22,20 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int ret;
+    bool system_status;
 
-    return true;
+    ret = system(cmd);
+    if(ret == 0)
+    {
+        system_status = true;
+    }
+    else
+    {
+        system_status = false;
+    }
+
+    return system_status;
 }
 
 /**
@@ -58,10 +76,60 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    // create a child process using fork
+    int execv_status;
+    int child_process_status;
+    int child_process_wait_status;
+    bool exit_status = true;
+    pid_t pid;
+    
+    fflush(stdout);
+    switch(pid = fork()) 
+    {
+    case -1:
+       // On error fork() returns -1.
+       exit_status = false;
+       perror("fork failed");
+       break;
+    
+    case 0:
+       // On success fork() returns 0 in the child.
+       // Child process code. 
+       execv_status = execv(command[0], command);
+       if(execv_status == -1)
+       {
+            exit(EXIT_FAILURE);
+       }
+       break;
+    
+    default:
+       // On success fork() returns the pid of the child to the parent.
+       // Parent process code.
+       // wait for the child process to finish
+        child_process_wait_status = wait(&child_process_status);
+        if (child_process_wait_status != -1)
+        { 
+            if(WIFEXITED(child_process_status) && WEXITSTATUS(child_process_status) != 0)
+            {
+                exit_status = false;
+                perror("Wait statue error");
+            }
+            else
+            {
+                exit_status = true;
+            }
+        }
+        else
+        {
+            exit_status = false;
+            perror("Wait failed");
+        }
+        break;
+   }
+
 
     va_end(args);
-
-    return true;
+    return exit_status;
 }
 
 /**
@@ -92,8 +160,71 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    int fd;
+    int execv_status;
+    int child_process_status;
+    int child_process_wait_status;
+    bool exit_status = true;
+    pid_t pid;
+    
+    // this piece of code follows the reference mentioned here
+    fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0600);
+    if(fd < 0) 
+    { 
+        perror("couldn't open file");
+        return false;
+    }
+    fflush(stdout);
+    switch(pid = fork()) 
+    {
+    case -1:
+       // On error fork() returns -1.
+       exit_status = false;
+       perror("fork failed");
+       break;
+    
+    case 0:
+       // On success fork() returns 0 in the child.
+       // Child process code. 
+       if(dup2(fd, 1) < 0)   // 1 represents the stdout
+       { 
+           perror("couldn't redirect stdout to the specified file");
+           return false;
+       }
+       close(fd);
+       execv_status = execv(command[0], command);
+       if(execv_status == -1)
+       {
+           exit(EXIT_FAILURE);
+       }
+       break;
+    
+    default:
+       // On success fork() returns the pid of the child to the parent.
+       // Parent process code.
+       // wait for the child process to finish
+        child_process_wait_status = wait(&child_process_status);
+        if (child_process_wait_status != -1)
+        { 
+            if(WIFEXITED(child_process_status) && WEXITSTATUS(child_process_status) != 0)
+            {
+                exit_status = false;
+                perror("Wait statue error");
+            }
+            else
+            {
+                exit_status = true;
+            }
+        }
+        else
+        {
+            exit_status = false;
+            perror("Wait failed");
+        }
+        break;
+   }
+
 
     va_end(args);
-
-    return true;
+    return exit_status;
 }
